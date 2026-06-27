@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from portfolio.documents import (
     MARKET_DOMESTIC,
+    MARKET_DOMESTIC_ETF,
     MARKET_FOREIGN,
     CashItem,
     MyFinData,
@@ -13,11 +14,11 @@ from portfolio.documents import (
 )
 from portfolio.serializers import AssetSaveSerializer
 from portfolio.services.price_fetcher import (
-    _normalize_domestic_symbol,
+    _format_krw_code,
     enrich_holding,
     fetch_usd_krw_rate,
 )
-from portfolio.services.symbol_resolver import resolve_domestic_symbol_by_name
+from portfolio.services.symbol_resolver import resolve_symbol_by_name
 
 
 class HealthCheckView(APIView):
@@ -58,14 +59,17 @@ def _cash_to_dict(item: CashItem) -> dict:
 
 def _split_holdings(holdings: list[StockItem]) -> dict:
     domestic = []
+    etf = []
     foreign = []
     for item in holdings:
         data = _item_to_dict(item)
         if data["market_type"] == MARKET_FOREIGN:
             foreign.append(data)
+        elif data["market_type"] == MARKET_DOMESTIC_ETF:
+            etf.append(data)
         else:
             domestic.append(data)
-    return {"domestic": domestic, "foreign": foreign}
+    return {"domestic": domestic, "etf": etf, "foreign": foreign}
 
 
 def _serialize_fin_data(doc: MyFinData | None) -> dict:
@@ -73,6 +77,7 @@ def _serialize_fin_data(doc: MyFinData | None) -> dict:
         return {
             "id": None,
             "domestic": [],
+            "etf": [],
             "foreign": [],
             "cash": [],
             "updated_at": None,
@@ -93,17 +98,19 @@ def _build_stock_items(items: list[dict], market_type: str) -> list[StockItem]:
         name = item.get("name", "").strip()
         symbol = item.get("symbol", "").strip()
 
-        if market_type == MARKET_DOMESTIC:
+        if market_type in (MARKET_DOMESTIC, MARKET_DOMESTIC_ETF):
             if not name:
                 continue
             if symbol:
-                resolved_symbol = _normalize_domestic_symbol(symbol)
+                resolved_symbol = _format_krw_code(symbol)
             else:
-                resolved_symbol = resolve_domestic_symbol_by_name(name) or ""
+                resolved_symbol = resolve_symbol_by_name(name, market_type) or ""
         else:
             if not symbol:
                 continue
             resolved_symbol = symbol.strip().upper()
+            if not name:
+                name = resolved_symbol
 
         result.append(
             StockItem(
@@ -163,12 +170,16 @@ class AssetView(APIView):
             serializer.validated_data.get("domestic", []),
             MARKET_DOMESTIC,
         )
+        etf = _build_stock_items(
+            serializer.validated_data.get("etf", []),
+            MARKET_DOMESTIC_ETF,
+        )
         foreign = _build_stock_items(
             serializer.validated_data.get("foreign", []),
             MARKET_FOREIGN,
         )
         cash = _build_cash_items(serializer.validated_data.get("cash", []))
-        holdings = domestic + foreign
+        holdings = domestic + etf + foreign
 
         if not holdings and not cash:
             return Response(
@@ -195,9 +206,11 @@ class DashboardView(APIView):
         empty_summary = {
             "total_value_krw": 0,
             "domestic_value_krw": 0,
+            "etf_value_krw": 0,
             "foreign_value_krw": 0,
             "cash_value_krw": 0,
             "domestic_count": 0,
+            "etf_count": 0,
             "foreign_count": 0,
             "cash_count": 0,
         }
@@ -209,6 +222,7 @@ class DashboardView(APIView):
                     "usd_krw_rate": fetch_usd_krw_rate(),
                     "summary": empty_summary,
                     "domestic": [],
+                    "etf": [],
                     "foreign": [],
                     "cash": [],
                 }
@@ -218,6 +232,7 @@ class DashboardView(APIView):
         usd_krw_rate = fetch_usd_krw_rate()
 
         domestic = [enrich_holding(item, usd_krw_rate) for item in split["domestic"]]
+        etf = [enrich_holding(item, usd_krw_rate) for item in split["etf"]]
         foreign = [enrich_holding(item, usd_krw_rate) for item in split["foreign"]]
         cash = [
             _enrich_cash(_cash_to_dict(item))
@@ -225,6 +240,7 @@ class DashboardView(APIView):
         ]
 
         domestic_value = sum(item["value_krw"] or 0 for item in domestic)
+        etf_value = sum(item["value_krw"] or 0 for item in etf)
         foreign_value = sum(item["value_krw"] or 0 for item in foreign)
         cash_value = sum(item["value_krw"] or 0 for item in cash)
 
@@ -233,15 +249,18 @@ class DashboardView(APIView):
                 "updated_at": doc.updated_at,
                 "usd_krw_rate": usd_krw_rate,
                 "summary": {
-                    "total_value_krw": domestic_value + foreign_value + cash_value,
+                    "total_value_krw": domestic_value + etf_value + foreign_value + cash_value,
                     "domestic_value_krw": domestic_value,
+                    "etf_value_krw": etf_value,
                     "foreign_value_krw": foreign_value,
                     "cash_value_krw": cash_value,
                     "domestic_count": len(domestic),
+                    "etf_count": len(etf),
                     "foreign_count": len(foreign),
                     "cash_count": len(cash),
                 },
                 "domestic": domestic,
+                "etf": etf,
                 "foreign": foreign,
                 "cash": cash,
             }

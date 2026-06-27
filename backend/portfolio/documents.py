@@ -11,6 +11,7 @@ from mongoengine import (
 )
 
 MARKET_DOMESTIC = "domestic"
+MARKET_DOMESTIC_ETF = "domestic_etf"
 MARKET_FOREIGN = "foreign"
 
 
@@ -21,7 +22,7 @@ class StockItem(EmbeddedDocument):
     market_type = StringField(
         required=True,
         max_length=16,
-        choices=[MARKET_DOMESTIC, MARKET_FOREIGN],
+        choices=[MARKET_DOMESTIC, MARKET_DOMESTIC_ETF, MARKET_FOREIGN],
         default=MARKET_DOMESTIC,
     )
     asset_category = StringField(max_length=64)

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from portfolio.documents import MARKET_DOMESTIC, MARKET_FOREIGN
+from portfolio.documents import MARKET_DOMESTIC, MARKET_DOMESTIC_ETF, MARKET_FOREIGN
 
 
 class DomesticStockItemSerializer(serializers.Serializer):
@@ -11,6 +11,10 @@ class DomesticStockItemSerializer(serializers.Serializer):
     broker = serializers.CharField(max_length=64, required=False, allow_blank=True, default="")
     sector = serializers.CharField(max_length=64, required=False, allow_blank=True, default="")
     industry = serializers.CharField(max_length=64, required=False, allow_blank=True, default="")
+
+
+class DomesticEtfItemSerializer(DomesticStockItemSerializer):
+    pass
 
 
 class ForeignStockItemSerializer(serializers.Serializer):
@@ -34,9 +38,12 @@ class CashItemSerializer(serializers.Serializer):
 
 class AssetSaveSerializer(serializers.Serializer):
     domestic = DomesticStockItemSerializer(many=True, required=False, default=list)
+    etf = DomesticEtfItemSerializer(many=True, required=False, default=list)
     foreign = ForeignStockItemSerializer(many=True, required=False, default=list)
     cash = CashItemSerializer(many=True, required=False, default=list)
 
 
 class StockItemWithMarketSerializer(DomesticStockItemSerializer):
-    market_type = serializers.ChoiceField(choices=[MARKET_DOMESTIC, MARKET_FOREIGN])
+    market_type = serializers.ChoiceField(
+        choices=[MARKET_DOMESTIC, MARKET_DOMESTIC_ETF, MARKET_FOREIGN]
+    )

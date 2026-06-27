@@ -2,26 +2,49 @@
 
 import yfinance as yf
 
-from portfolio.services.symbol_resolver import resolve_domestic_symbol_by_name
+from portfolio.documents import MARKET_DOMESTIC, MARKET_DOMESTIC_ETF, MARKET_FOREIGN
+from portfolio.services.symbol_resolver import (
+    resolve_domestic_symbol_by_name,
+    resolve_etf_symbol_by_name,
+)
 
-MARKET_DOMESTIC = "domestic"
-MARKET_FOREIGN = "foreign"
+KRW_MARKETS = {MARKET_DOMESTIC, MARKET_DOMESTIC_ETF}
 
 
-def _normalize_domestic_symbol(symbol: str) -> str:
-    return symbol.strip().upper().replace(".KS", "").replace(".KQ", "").zfill(6)
+def _format_krw_code(symbol: str) -> str:
+    symbol = symbol.strip().upper().replace(".KS", "").replace(".KQ", "")
+    if symbol.isdigit():
+        return symbol.zfill(6)
+    return symbol
 
 
-def _resolve_domestic_code(symbol: str, name: str) -> str | None:
+def _resolve_krw_code(symbol: str, name: str, market_type: str) -> str | None:
     if symbol.strip():
-        return _normalize_domestic_symbol(symbol)
+        return _format_krw_code(symbol)
+    if market_type == MARKET_DOMESTIC_ETF:
+        return resolve_etf_symbol_by_name(name)
     return resolve_domestic_symbol_by_name(name)
 
 
-def to_yahoo_symbol(symbol: str, market_type: str) -> str:
-    if market_type == MARKET_DOMESTIC:
-        return f"{_normalize_domestic_symbol(symbol)}.KS"
-    return symbol.strip().upper()
+def _fetch_krw_price(code: str) -> dict:
+    for suffix in (".KS", ".KQ"):
+        yahoo_symbol = f"{code}{suffix}"
+        price = _fetch_close_price(yahoo_symbol)
+        if price is not None:
+            return {
+                "price": price,
+                "currency": "KRW",
+                "yahoo_symbol": yahoo_symbol,
+                "resolved_symbol": code,
+                "error": None,
+            }
+    return {
+        "price": None,
+        "currency": "KRW",
+        "yahoo_symbol": f"{code}.KS",
+        "resolved_symbol": code,
+        "error": "현재가를 불러올 수 없습니다.",
+    }
 
 
 def _fetch_close_price(yahoo_symbol: str) -> float | None:
@@ -38,51 +61,34 @@ def fetch_usd_krw_rate() -> float | None:
 
 def fetch_current_price(symbol: str, market_type: str, name: str = "") -> dict:
     """종목 현재가 조회. 실패 시 price=None, error 메시지 반환."""
-    if market_type == MARKET_DOMESTIC:
-        code = _resolve_domestic_code(symbol, name)
+    if market_type in KRW_MARKETS:
+        code = _resolve_krw_code(symbol, name, market_type)
         if not code:
+            label = "ETF명" if market_type == MARKET_DOMESTIC_ETF else "종목명"
             return {
                 "price": None,
                 "currency": "KRW",
                 "yahoo_symbol": None,
                 "resolved_symbol": "",
-                "error": "종목명으로 종목코드를 찾을 수 없습니다.",
+                "error": f"{label}으로 종목코드를 찾을 수 없습니다.",
             }
+        return _fetch_krw_price(code)
 
-        for suffix in (".KS", ".KQ"):
-            yahoo_symbol = f"{code}{suffix}"
-            price = _fetch_close_price(yahoo_symbol)
-            if price is not None:
-                return {
-                    "price": price,
-                    "currency": "KRW",
-                    "yahoo_symbol": yahoo_symbol,
-                    "resolved_symbol": code,
-                    "error": None,
-                }
-        return {
-            "price": None,
-            "currency": "KRW",
-            "yahoo_symbol": f"{code}.KS",
-            "resolved_symbol": code,
-            "error": "현재가를 불러올 수 없습니다.",
-        }
-
-    yahoo_symbol = to_yahoo_symbol(symbol, market_type)
+    yahoo_symbol = symbol.strip().upper()
     price = _fetch_close_price(yahoo_symbol)
     if price is None:
         return {
             "price": None,
             "currency": "USD",
             "yahoo_symbol": yahoo_symbol,
-            "resolved_symbol": symbol.strip().upper(),
+            "resolved_symbol": yahoo_symbol,
             "error": "현재가를 불러올 수 없습니다.",
         }
     return {
         "price": price,
         "currency": "USD",
         "yahoo_symbol": yahoo_symbol,
-        "resolved_symbol": symbol.strip().upper(),
+        "resolved_symbol": yahoo_symbol,
         "error": None,
     }
 
