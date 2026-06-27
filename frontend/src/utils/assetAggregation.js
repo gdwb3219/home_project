@@ -43,7 +43,16 @@ export function flattenDashboardAssets(dashboard) {
     value_krw: item.value_krw || item.amount || 0,
   }))
 
-  return [...stockItems, ...cashItems].filter((item) => item.value_krw > 0)
+  const goldItems = (dashboard.gold ?? []).map((item) => ({
+    name: item.name || '-',
+    asset_category: item.asset_category || '금(Gold)',
+    broker: item.broker || '',
+    sector: item.sector || '',
+    industry: item.industry || '',
+    value_krw: item.value_krw || 0,
+  }))
+
+  return [...stockItems, ...cashItems, ...goldItems].filter((item) => item.value_krw > 0)
 }
 
 export function aggregateByField(items, field, emptyLabel = '미분류') {

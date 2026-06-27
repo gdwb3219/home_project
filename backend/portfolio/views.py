@@ -4,21 +4,16 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from portfolio.documents import (
-    MARKET_DOMESTIC,
-    MARKET_DOMESTIC_ETF,
-    MARKET_FOREIGN,
-    CashItem,
-    MyFinData,
-    StockItem,
-)
 from portfolio.serializers import AssetSaveSerializer
-from portfolio.services.price_fetcher import (
-    _format_krw_code,
-    enrich_holding,
-    fetch_usd_krw_rate,
+from portfolio.services.snapshot_service import (
+    create_snapshot,
+    get_snapshot,
+    list_snapshots,
+    snapshot_to_assets,
+    snapshot_to_dashboard,
+    snapshot_to_list_item,
+    update_snapshot,
 )
-from portfolio.services.symbol_resolver import resolve_symbol_by_name
 
 
 class HealthCheckView(APIView):
@@ -32,236 +27,90 @@ class HealthCheckView(APIView):
         )
 
 
-def _item_to_dict(item: StockItem) -> dict:
-    market_type = getattr(item, "market_type", None) or MARKET_DOMESTIC
-    return {
-        "symbol": item.symbol,
-        "name": item.name or "",
-        "quantity": item.quantity,
-        "market_type": market_type,
-        "asset_category": getattr(item, "asset_category", None) or "",
-        "broker": getattr(item, "broker", None) or "",
-        "sector": getattr(item, "sector", None) or "",
-        "industry": getattr(item, "industry", None) or "",
-    }
-
-
-def _cash_to_dict(item: CashItem) -> dict:
-    return {
-        "name": item.name,
-        "amount": item.amount,
-        "asset_category": getattr(item, "asset_category", None) or "",
-        "broker": getattr(item, "broker", None) or "",
-        "sector": getattr(item, "sector", None) or "",
-        "industry": getattr(item, "industry", None) or "",
-    }
-
-
-def _split_holdings(holdings: list[StockItem]) -> dict:
-    domestic = []
-    etf = []
-    foreign = []
-    for item in holdings:
-        data = _item_to_dict(item)
-        if data["market_type"] == MARKET_FOREIGN:
-            foreign.append(data)
-        elif data["market_type"] == MARKET_DOMESTIC_ETF:
-            etf.append(data)
-        else:
-            domestic.append(data)
-    return {"domestic": domestic, "etf": etf, "foreign": foreign}
-
-
-def _serialize_fin_data(doc: MyFinData | None) -> dict:
-    if not doc:
-        return {
-            "id": None,
-            "domestic": [],
-            "etf": [],
-            "foreign": [],
-            "cash": [],
-            "updated_at": None,
-        }
-    split = _split_holdings(doc.holdings)
-    cash = [_cash_to_dict(item) for item in getattr(doc, "cash_holdings", []) or []]
-    return {
-        "id": str(doc.id),
-        **split,
-        "cash": cash,
-        "updated_at": doc.updated_at,
-    }
-
-
-def _build_stock_items(items: list[dict], market_type: str) -> list[StockItem]:
-    result = []
-    for item in items:
-        name = item.get("name", "").strip()
-        symbol = item.get("symbol", "").strip()
-
-        if market_type in (MARKET_DOMESTIC, MARKET_DOMESTIC_ETF):
-            if not name:
-                continue
-            if symbol:
-                resolved_symbol = _format_krw_code(symbol)
-            else:
-                resolved_symbol = resolve_symbol_by_name(name, market_type) or ""
-        else:
-            if not symbol:
-                continue
-            resolved_symbol = symbol.strip().upper()
-            if not name:
-                name = resolved_symbol
-
-        result.append(
-            StockItem(
-                symbol=resolved_symbol,
-                name=name,
-                quantity=item["quantity"],
-                market_type=market_type,
-                asset_category=item.get("asset_category", "").strip(),
-                broker=item.get("broker", "").strip(),
-                sector=item.get("sector", "").strip(),
-                industry=item.get("industry", "").strip(),
-            )
-        )
-    return result
-
-
-def _build_cash_items(items: list[dict]) -> list[CashItem]:
-    result = []
-    for item in items:
-        name = item["name"].strip()
-        if not name:
-            continue
-        result.append(
-            CashItem(
-                name=name,
-                amount=item["amount"],
-                asset_category=item.get("asset_category", "").strip(),
-                broker=item.get("broker", "").strip(),
-                sector=item.get("sector", "").strip(),
-                industry=item.get("industry", "").strip(),
-            )
-        )
-    return result
-
-
-def _enrich_cash(item: dict) -> dict:
-    amount = item["amount"]
-    return {
-        **item,
-        "currency": "KRW",
-        "value_krw": amount,
-    }
-
-
 class AssetView(APIView):
-    """My_Fin_Data 컬렉션에 보유 자산을 저장/조회"""
+    """최신 스냅샷의 보유 자산 조회 / 저장 시 새 스냅샷 생성"""
 
     def get(self, request):
-        doc = MyFinData.objects.first()
-        return Response(_serialize_fin_data(doc))
+        version = request.query_params.get("version")
+        version_int = int(version) if version and version.isdigit() else None
+        snapshot = get_snapshot(version=version_int)
+        if version_int is not None and not snapshot:
+            return Response(
+                {"detail": f"스냅샷 v{version_int}을 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(snapshot_to_assets(snapshot))
 
     def post(self, request):
         serializer = AssetSaveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        domestic = _build_stock_items(
-            serializer.validated_data.get("domestic", []),
-            MARKET_DOMESTIC,
-        )
-        etf = _build_stock_items(
-            serializer.validated_data.get("etf", []),
-            MARKET_DOMESTIC_ETF,
-        )
-        foreign = _build_stock_items(
-            serializer.validated_data.get("foreign", []),
-            MARKET_FOREIGN,
-        )
-        cash = _build_cash_items(serializer.validated_data.get("cash", []))
-        holdings = domestic + etf + foreign
+        try:
+            snapshot = create_snapshot(serializer.validated_data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not holdings and not cash:
-            return Response(
-                {"detail": "최소 1개 이상의 자산을 입력해 주세요."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        doc = MyFinData.objects.first()
-        if doc:
-            doc.holdings = holdings
-            doc.cash_holdings = cash
-            doc.save()
-        else:
-            doc = MyFinData(holdings=holdings, cash_holdings=cash).save()
-
-        return Response(_serialize_fin_data(doc), status=status.HTTP_201_CREATED)
+        data = snapshot_to_assets(snapshot)
+        data["message"] = f"스냅샷 v{snapshot.snapshot_version}이 저장되었습니다."
+        return Response(data, status=status.HTTP_201_CREATED)
 
 
 class DashboardView(APIView):
-    """현재가·평가금액이 포함된 대시보드 데이터"""
+    """MongoDB 스냅샷 기반 대시보드 (실시간 API 미사용)"""
 
     def get(self, request):
-        doc = MyFinData.objects.first()
-        empty_summary = {
-            "total_value_krw": 0,
-            "domestic_value_krw": 0,
-            "etf_value_krw": 0,
-            "foreign_value_krw": 0,
-            "cash_value_krw": 0,
-            "domestic_count": 0,
-            "etf_count": 0,
-            "foreign_count": 0,
-            "cash_count": 0,
-        }
+        version = request.query_params.get("version")
+        snapshot_id = request.query_params.get("snapshot_id")
 
-        if not doc:
-            return Response(
-                {
-                    "updated_at": None,
-                    "usd_krw_rate": fetch_usd_krw_rate(),
-                    "summary": empty_summary,
-                    "domestic": [],
-                    "etf": [],
-                    "foreign": [],
-                    "cash": [],
-                }
-            )
+        version_int = int(version) if version and version.isdigit() else None
+        snapshot = get_snapshot(snapshot_id=snapshot_id, version=version_int)
+        return Response(snapshot_to_dashboard(snapshot))
 
-        split = _split_holdings(doc.holdings)
-        usd_krw_rate = fetch_usd_krw_rate()
 
-        domestic = [enrich_holding(item, usd_krw_rate) for item in split["domestic"]]
-        etf = [enrich_holding(item, usd_krw_rate) for item in split["etf"]]
-        foreign = [enrich_holding(item, usd_krw_rate) for item in split["foreign"]]
-        cash = [
-            _enrich_cash(_cash_to_dict(item))
-            for item in getattr(doc, "cash_holdings", []) or []
-        ]
+class SnapshotListView(APIView):
+    """저장된 스냅샷 이력 목록"""
 
-        domestic_value = sum(item["value_krw"] or 0 for item in domestic)
-        etf_value = sum(item["value_krw"] or 0 for item in etf)
-        foreign_value = sum(item["value_krw"] or 0 for item in foreign)
-        cash_value = sum(item["value_krw"] or 0 for item in cash)
-
+    def get(self, request):
+        snapshots = list_snapshots()
         return Response(
             {
-                "updated_at": doc.updated_at,
-                "usd_krw_rate": usd_krw_rate,
-                "summary": {
-                    "total_value_krw": domestic_value + etf_value + foreign_value + cash_value,
-                    "domestic_value_krw": domestic_value,
-                    "etf_value_krw": etf_value,
-                    "foreign_value_krw": foreign_value,
-                    "cash_value_krw": cash_value,
-                    "domestic_count": len(domestic),
-                    "etf_count": len(etf),
-                    "foreign_count": len(foreign),
-                    "cash_count": len(cash),
-                },
-                "domestic": domestic,
-                "etf": etf,
-                "foreign": foreign,
-                "cash": cash,
+                "count": len(snapshots),
+                "snapshots": [snapshot_to_list_item(s) for s in snapshots],
             }
         )
+
+
+class SnapshotDetailView(APIView):
+    """특정 스냅샷 자산 조회 / 수정"""
+
+    def get(self, request, version):
+        snapshot = get_snapshot(version=version)
+        if not snapshot:
+            return Response(
+                {"detail": f"스냅샷 v{version}을 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(snapshot_to_assets(snapshot))
+
+    def put(self, request, version):
+        snapshot = get_snapshot(version=version)
+        if not snapshot:
+            return Response(
+                {"detail": f"스냅샷 v{version}을 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = AssetSaveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            updated = update_snapshot(snapshot, serializer.validated_data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = snapshot_to_assets(updated)
+        data["message"] = (
+            f"스냅샷 v{updated.snapshot_version}이 수정되었습니다. "
+            f"(저장 시점·가격 유지)"
+        )
+        return Response(data)

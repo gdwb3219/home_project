@@ -146,7 +146,7 @@ export default function ChartDashboardPage() {
           <p className="eyebrow">Chart Dashboard</p>
           <h1>차트 분석</h1>
           <p className="subtitle">
-            증권사, 섹터, 업종, 자산 구분 기준으로 자산 비중을 차트로 확인합니다.
+            최신 스냅샷 기준으로 증권사, 섹터, 업종, 자산 구분별 비중을 확인합니다.
           </p>
         </div>
       </header>

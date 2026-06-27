@@ -20,11 +20,29 @@ async function request(path, options = {}) {
 
 export const api = {
   getHealth: () => request('/health/'),
-  getAssets: () => request('/assets/'),
-  getDashboard: () => request('/dashboard/'),
-  saveAssets: ({ domestic, etf, foreign, cash }) =>
+  getAssets: ({ version } = {}) => {
+    const params = new URLSearchParams()
+    if (version != null) params.set('version', String(version))
+    const query = params.toString()
+    return request(`/assets/${query ? `?${query}` : ''}`)
+  },
+  getSnapshotAssets: (version) => request(`/snapshots/${version}/`),
+  getSnapshots: () => request('/snapshots/'),
+  getDashboard: ({ version, snapshotId } = {}) => {
+    const params = new URLSearchParams()
+    if (version != null) params.set('version', String(version))
+    if (snapshotId) params.set('snapshot_id', snapshotId)
+    const query = params.toString()
+    return request(`/dashboard/${query ? `?${query}` : ''}`)
+  },
+  saveAssets: ({ domestic, etf, foreign, cash, gold }) =>
     request('/assets/', {
       method: 'POST',
-      body: JSON.stringify({ domestic, etf, foreign, cash }),
+      body: JSON.stringify({ domestic, etf, foreign, cash, gold }),
+    }),
+  updateSnapshotAssets: (version, { domestic, etf, foreign, cash, gold }) =>
+    request(`/snapshots/${version}/`, {
+      method: 'PUT',
+      body: JSON.stringify({ domestic, etf, foreign, cash, gold }),
     }),
 }
