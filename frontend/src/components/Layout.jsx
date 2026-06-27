@@ -8,7 +8,8 @@ export default function Layout({ children }) {
           Home Project
         </Link>
         <div className="nav-links">
-          <Link to="/">대시보드</Link>
+          <Link to="/">테이블</Link>
+          <Link to="/charts">차트</Link>
           <Link to="/register">자산 등록</Link>
         </div>
       </nav>

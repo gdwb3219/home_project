@@ -160,6 +160,7 @@ export default function DashboardPage() {
   const summary = dashboard?.summary
   const totalCount =
     (summary?.domestic_count ?? 0) +
+    (summary?.etf_count ?? 0) +
     (summary?.foreign_count ?? 0) +
     (summary?.cash_count ?? 0)
   const hasAssets = totalCount > 0
@@ -173,6 +174,9 @@ export default function DashboardPage() {
           <p className="subtitle">주식 현재가와 현금성 자산을 합산해 총 자산을 확인합니다.</p>
         </div>
         <div className="header-actions">
+          <Link to="/charts" className="btn-secondary chart-link-btn">
+            차트 분석
+          </Link>
           <button
             type="button"
             className="btn-secondary"
@@ -203,6 +207,12 @@ export default function DashboardPage() {
           </strong>
         </article>
         <article className="stat-card">
+          <span className="stat-label">국내 ETF</span>
+          <strong className="stat-value stat-value-sm">
+            {loading ? '-' : formatKRW(summary?.etf_value_krw)}
+          </strong>
+        </article>
+        <article className="stat-card">
           <span className="stat-label">해외주식</span>
           <strong className="stat-value stat-value-sm">
             {loading ? '-' : formatKRW(summary?.foreign_value_krw)}
@@ -229,6 +239,11 @@ export default function DashboardPage() {
             <StockTable
               title="국내주식"
               holdings={dashboard.domestic}
+              usdKrwRate={dashboard.usd_krw_rate}
+            />
+            <StockTable
+              title="국내 ETF"
+              holdings={dashboard.etf}
               usdKrwRate={dashboard.usd_krw_rate}
             />
             <StockTable

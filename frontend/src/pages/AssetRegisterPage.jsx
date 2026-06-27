@@ -144,6 +144,74 @@ function DomesticStockSection({ rows, onUpdate, onAdd, onRemove }) {
   )
 }
 
+function DomesticEtfSection({ rows, onUpdate, onAdd, onRemove }) {
+  return (
+    <div className="holding-section">
+      <div className="section-header">
+        <h2>국내 ETF</h2>
+        <p>
+          ETF명만 입력하면 됩니다. KODEX, TIGER, RISE, SOL 등 국내 상장 ETF를 등록할 수 있습니다.
+          (예: KODEX 미국AI전력핵심인프라)
+        </p>
+      </div>
+
+      <div className="form-table-scroll">
+        <div className="form-table form-table-domestic">
+          <div className="form-row form-header form-row-domestic">
+            <span>ETF명</span>
+            <span>수량</span>
+            {EXTRA_FIELDS.map((field) => (
+              <span key={field.key}>{field.label}</span>
+            ))}
+            <span />
+          </div>
+
+          {rows.map((row, index) => (
+            <div className="form-row form-row-domestic" key={index}>
+              <input
+                type="text"
+                placeholder="예: KODEX 미국AI전력핵심인프라"
+                value={row.name}
+                onChange={(e) => onUpdate(index, 'name', e.target.value)}
+                required={index === 0}
+              />
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="0"
+                value={row.quantity}
+                onChange={(e) => onUpdate(index, 'quantity', e.target.value)}
+              />
+              {EXTRA_FIELDS.map((field) => (
+                <input
+                  key={field.key}
+                  type="text"
+                  placeholder={field.key === 'asset_category' ? '예: ETF' : field.placeholder}
+                  value={row[field.key]}
+                  onChange={(e) => onUpdate(index, field.key, e.target.value)}
+                />
+              ))}
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => onRemove(index)}
+                aria-label="행 삭제"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button type="button" className="btn-secondary section-add-btn" onClick={onAdd}>
+        + 국내 ETF 추가
+      </button>
+    </div>
+  )
+}
+
 function ForeignStockSection({ rows, onUpdate, onAdd, onRemove }) {
   return (
     <div className="holding-section">
@@ -282,6 +350,7 @@ function CashSection({ rows, onUpdate, onAdd, onRemove }) {
 export default function AssetRegisterPage() {
   const navigate = useNavigate()
   const [domesticRows, setDomesticRows] = useState([emptyDomesticRow()])
+  const [etfRows, setEtfRows] = useState([emptyDomesticRow()])
   const [foreignRows, setForeignRows] = useState([emptyForeignRow()])
   const [cashRows, setCashRows] = useState([emptyCashRow()])
   const [loading, setLoading] = useState(true)
@@ -295,6 +364,9 @@ export default function AssetRegisterPage() {
         const data = await api.getAssets()
         if (data.domestic?.length > 0) {
           setDomesticRows(data.domestic.map(mapDomesticToRow))
+        }
+        if (data.etf?.length > 0) {
+          setEtfRows(data.etf.map(mapDomesticToRow))
         }
         if (data.foreign?.length > 0) {
           setForeignRows(data.foreign.map(mapForeignToRow))
@@ -318,6 +390,12 @@ export default function AssetRegisterPage() {
 
   const removeDomesticRow = (index) => {
     setDomesticRows((prev) =>
+      prev.length === 1 ? [emptyDomesticRow()] : prev.filter((_, i) => i !== index),
+    )
+  }
+
+  const removeEtfRow = (index) => {
+    setEtfRows((prev) =>
       prev.length === 1 ? [emptyDomesticRow()] : prev.filter((_, i) => i !== index),
     )
   }
@@ -375,17 +453,18 @@ export default function AssetRegisterPage() {
     setError(null)
 
     const domestic = parseDomesticRows(domesticRows)
+    const etf = parseDomesticRows(etfRows)
     const foreign = parseForeignRows(foreignRows)
     const cash = parseCashRows(cashRows)
-    const all = [...domestic, ...foreign, ...cash]
+    const all = [...domestic, ...etf, ...foreign, ...cash]
 
     if (all.length === 0) {
-      setError('주식 또는 현금성 자산 중 최소 1개 이상 입력해 주세요.')
+      setError('주식, ETF 또는 현금성 자산 중 최소 1개 이상 입력해 주세요.')
       return
     }
 
     if (
-      [...domestic, ...foreign].some((row) => Number.isNaN(row.quantity) || row.quantity < 0) ||
+      [...domestic, ...etf, ...foreign].some((row) => Number.isNaN(row.quantity) || row.quantity < 0) ||
       cash.some((row) => Number.isNaN(row.amount) || row.amount < 0)
     ) {
       setError('수량·금액은 0 이상의 숫자로 입력해 주세요.')
@@ -394,7 +473,7 @@ export default function AssetRegisterPage() {
 
     setSaving(true)
     try {
-      await api.saveAssets({ domestic, foreign, cash })
+      await api.saveAssets({ domestic, etf, foreign, cash })
       setMessage('저장되었습니다.')
       setTimeout(() => navigate('/'), 800)
     } catch (err) {
@@ -411,7 +490,7 @@ export default function AssetRegisterPage() {
           <p className="eyebrow">Asset Register</p>
           <h1>자산 등록</h1>
           <p className="subtitle">
-            국내주식은 종목명만 입력하면 되고, 해외주식은 티커 심볼을 입력합니다.
+            국내주식·국내 ETF는 이름만 입력하고, 해외주식은 티커 심볼을 입력합니다.
           </p>
         </div>
       </header>
@@ -429,6 +508,13 @@ export default function AssetRegisterPage() {
               onUpdate={updateRows(setDomesticRows)}
               onAdd={() => setDomesticRows((prev) => [...prev, emptyDomesticRow()])}
               onRemove={removeDomesticRow}
+            />
+
+            <DomesticEtfSection
+              rows={etfRows}
+              onUpdate={updateRows(setEtfRows)}
+              onAdd={() => setEtfRows((prev) => [...prev, emptyDomesticRow()])}
+              onRemove={removeEtfRow}
             />
 
             <ForeignStockSection

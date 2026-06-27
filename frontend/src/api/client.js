@@ -22,9 +22,9 @@ export const api = {
   getHealth: () => request('/health/'),
   getAssets: () => request('/assets/'),
   getDashboard: () => request('/dashboard/'),
-  saveAssets: ({ domestic, foreign, cash }) =>
+  saveAssets: ({ domestic, etf, foreign, cash }) =>
     request('/assets/', {
       method: 'POST',
-      body: JSON.stringify({ domestic, foreign, cash }),
+      body: JSON.stringify({ domestic, etf, foreign, cash }),
     }),
 }
