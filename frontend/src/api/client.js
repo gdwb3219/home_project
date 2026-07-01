@@ -40,9 +40,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ domestic, etf, foreign, cash, gold }),
     }),
-  updateSnapshotAssets: (version, { domestic, etf, foreign, cash, gold }) =>
+  updateSnapshotAssets: (version, { domestic, etf, foreign, cash, gold, usd_krw_rate }) =>
     request(`/snapshots/${version}/`, {
       method: 'PUT',
-      body: JSON.stringify({ domestic, etf, foreign, cash, gold }),
+      body: JSON.stringify({ domestic, etf, foreign, cash, gold, usd_krw_rate }),
     }),
 }

@@ -1,0 +1,18 @@
+{
+  "name": "04_home_project",
+  "version": "1.0.0",
+  "description": "React + Django + MongoDB 스택으로 보유 종목과 현재가를 관리하는 홈 프로젝트입니다.",
+  "main": "index.js",
+  "scripts": {
+    "start": "concurrently -n frontend,backend -c cyan,magenta \"npm run start:frontend\" \"npm run start:backend\"",
+    "start:frontend": "npm run dev --prefix frontend",
+    "start:backend": "node scripts/start-backend.cjs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

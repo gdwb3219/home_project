@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Bar,
   BarChart,
@@ -35,7 +35,7 @@ function ChartTooltip({ active, payload }) {
   )
 }
 
-function BreakdownPanel({ title, description, data }) {
+function BreakdownPanel({ title, description, data, onSliceClick, selectedSlice }) {
   if (data.length === 0) {
     return (
       <article className="chart-panel">
@@ -48,11 +48,13 @@ function BreakdownPanel({ title, description, data }) {
     )
   }
 
+  const clickable = !!onSliceClick
+
   return (
     <article className="chart-panel">
       <div className="panel-header">
         <h2>{title}</h2>
-        <p>{description}</p>
+        <p>{description}{clickable && ' · 섹터를 클릭하면 기간별 비중 추이를 확인할 수 있습니다.'}</p>
       </div>
 
       <div className="chart-panel-body">
@@ -70,7 +72,13 @@ function BreakdownPanel({ title, description, data }) {
                 paddingAngle={2}
               >
                 {data.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
+                  <Cell
+                    key={entry.name}
+                    fill={entry.color}
+                    opacity={selectedSlice && selectedSlice !== entry.name ? 0.3 : 1}
+                    onClick={() => onSliceClick?.(entry.name)}
+                    cursor={clickable ? 'pointer' : 'default'}
+                  />
                 ))}
               </Pie>
               <Tooltip content={<ChartTooltip />} />
@@ -86,12 +94,21 @@ function BreakdownPanel({ title, description, data }) {
                 type="category"
                 dataKey="name"
                 width={88}
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                tick={{ fill: '#64748b', fontSize: 12 }}
               />
               <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+              <Bar
+                dataKey="value"
+                radius={[0, 6, 6, 0]}
+                onClick={(barData) => onSliceClick?.(barData.name)}
+                cursor={clickable ? 'pointer' : 'default'}
+              >
                 {data.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
+                  <Cell
+                    key={entry.name}
+                    fill={entry.color}
+                    opacity={selectedSlice && selectedSlice !== entry.name ? 0.3 : 1}
+                  />
                 ))}
               </Bar>
             </BarChart>
@@ -101,7 +118,15 @@ function BreakdownPanel({ title, description, data }) {
 
       <ul className="chart-legend">
         {data.map((item) => (
-          <li key={item.name}>
+          <li
+            key={item.name}
+            onClick={() => onSliceClick?.(item.name)}
+            style={{
+              cursor: clickable ? 'pointer' : 'default',
+              opacity: selectedSlice && selectedSlice !== item.name ? 0.45 : 1,
+              transition: 'opacity 0.15s',
+            }}
+          >
             <span className="legend-dot" style={{ background: item.color }} />
             <span className="legend-name">{item.name}</span>
             <span className="legend-value">{formatKRW(item.value)}</span>
@@ -114,10 +139,11 @@ function BreakdownPanel({ title, description, data }) {
 }
 
 export default function ChartDashboardPage() {
+  const navigate = useNavigate()
   const [dashboard, setDashboard] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeDimension, setActiveDimension] = useState('byBroker')
+  const [activeDimension, setActiveDimension] = useState('bySector')
 
   useEffect(() => {
     async function loadDashboard() {
@@ -138,6 +164,14 @@ export default function ChartDashboardPage() {
   const breakdown = useMemo(() => buildChartBreakdown(dashboard), [dashboard])
   const activeData = breakdown[DIMENSIONS.find((d) => d.key === activeDimension)?.key] ?? []
   const activeMeta = DIMENSIONS.find((d) => d.key === activeDimension)
+
+  function handleDimensionChange(key) {
+    setActiveDimension(key)
+  }
+
+  function handleSectorClick(sectorName) {
+    navigate(`/charts/sector-history?sector=${encodeURIComponent(sectorName)}`)
+  }
 
   return (
     <Layout>
@@ -191,7 +225,7 @@ export default function ChartDashboardPage() {
                   key={dimension.key}
                   type="button"
                   className={`chart-tab ${activeDimension === dimension.key ? 'active' : ''}`}
-                  onClick={() => setActiveDimension(dimension.key)}
+                  onClick={() => handleDimensionChange(dimension.key)}
                 >
                   {dimension.label}
                 </button>
@@ -202,6 +236,7 @@ export default function ChartDashboardPage() {
               title={activeMeta.label}
               description={activeMeta.description}
               data={activeData}
+              onSliceClick={activeDimension === 'bySector' ? handleSectorClick : undefined}
             />
           </section>
 

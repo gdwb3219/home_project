@@ -40,8 +40,7 @@ def _build_stock_items(items: list[dict], market_type: str) -> list[dict]:
             if not name:
                 name = resolved_symbol
 
-        result.append(
-            {
+        entry = {
                 "symbol": resolved_symbol,
                 "name": name,
                 "quantity": item["quantity"],
@@ -51,7 +50,9 @@ def _build_stock_items(items: list[dict], market_type: str) -> list[dict]:
                 "sector": item.get("sector", "").strip(),
                 "industry": item.get("industry", "").strip(),
             }
-        )
+        if item.get("price") is not None:
+            entry["price"] = item["price"]
+        result.append(entry)
     return result
 
 
@@ -61,8 +62,7 @@ def _build_gold_items(items: list[dict]) -> list[dict]:
         name = item["name"].strip()
         if not name:
             continue
-        result.append(
-            {
+        entry = {
                 "name": name,
                 "quantity": item["quantity"],
                 "asset_category": item.get("asset_category", "").strip() or "금(Gold)",
@@ -70,7 +70,9 @@ def _build_gold_items(items: list[dict]) -> list[dict]:
                 "sector": item.get("sector", "").strip(),
                 "industry": item.get("industry", "").strip(),
             }
-        )
+        if item.get("price") is not None:
+            entry["price"] = item["price"]
+        result.append(entry)
     return result
 
 
@@ -278,6 +280,7 @@ def snapshot_to_dashboard(snapshot: PortfolioSnapshot | None) -> dict:
             "cash": [],
             "gold": [],
             "performance": build_performance_history(),
+            "sector_history": build_sector_history(),
         }
 
     split = _split_holdings(snapshot.holdings)
@@ -294,13 +297,14 @@ def snapshot_to_dashboard(snapshot: PortfolioSnapshot | None) -> dict:
         "gold_usd_per_oz": getattr(snapshot, "gold_usd_per_oz", None),
         "summary": summary,
         "performance": build_performance_history(snapshot.snapshot_version),
+        "sector_history": build_sector_history(),
         **split,
         "cash": cash,
         "gold": gold,
     }
 
 
-def snapshot_to_assets(snapshot: PortfolioSnapshot | None) -> dict:
+def snapshot_to_assets(snapshot: PortfolioSnapshot | None, include_prices: bool = False) -> dict:
     if not snapshot:
         return {
             "snapshot_id": None,
@@ -315,19 +319,20 @@ def snapshot_to_assets(snapshot: PortfolioSnapshot | None) -> dict:
 
     split = _split_holdings(snapshot.holdings)
 
-    def strip_prices(items):
-        return [
-            {
-                "symbol": item["symbol"],
-                "name": item["name"],
-                "quantity": item["quantity"],
-                "asset_category": item["asset_category"],
-                "broker": item["broker"],
-                "sector": item["sector"],
-                "industry": item["industry"],
-            }
-            for item in items
-        ]
+    def stock_item_dict(item: dict) -> dict:
+        data = {
+            "symbol": item["symbol"],
+            "name": item["name"],
+            "quantity": item["quantity"],
+            "asset_category": item["asset_category"],
+            "broker": item["broker"],
+            "sector": item["sector"],
+            "industry": item["industry"],
+        }
+        if include_prices:
+            data["price"] = item.get("price")
+            data["currency"] = item.get("currency")
+        return data
 
     cash = [
         {
@@ -341,8 +346,9 @@ def snapshot_to_assets(snapshot: PortfolioSnapshot | None) -> dict:
         for item in [_cash_to_dict(c) for c in snapshot.cash_holdings or []]
     ]
 
-    gold = [
-        {
+    gold = []
+    for item in [_gold_to_dict(g) for g in getattr(snapshot, "gold_holdings", []) or []]:
+        row = {
             "name": item["name"],
             "quantity": item["quantity"],
             "asset_category": item["asset_category"],
@@ -350,106 +356,61 @@ def snapshot_to_assets(snapshot: PortfolioSnapshot | None) -> dict:
             "sector": item["sector"],
             "industry": item["industry"],
         }
-        for item in [_gold_to_dict(g) for g in getattr(snapshot, "gold_holdings", []) or []]
-    ]
+        if include_prices:
+            row["price"] = item.get("price")
+        gold.append(row)
 
-    return {
+    result = {
         "snapshot_id": str(snapshot.id),
         "snapshot_version": snapshot.snapshot_version,
         "snapshot_at": snapshot.snapshot_at,
-        "domestic": strip_prices(split["domestic"]),
-        "etf": strip_prices(split["etf"]),
-        "foreign": strip_prices(split["foreign"]),
+        "domestic": [stock_item_dict(item) for item in split["domestic"]],
+        "etf": [stock_item_dict(item) for item in split["etf"]],
+        "foreign": [stock_item_dict(item) for item in split["foreign"]],
         "cash": cash,
         "gold": gold,
         "updated_at": snapshot.snapshot_at,
     }
+    if include_prices:
+        result["usd_krw_rate"] = snapshot.usd_krw_rate
+        result["gold_usd_per_oz"] = getattr(snapshot, "gold_usd_per_oz", None)
+    return result
 
 
-def _normalize_stock_symbol(symbol: str, market_type: str) -> str:
-    symbol = (symbol or "").strip()
-    if market_type in (MARKET_DOMESTIC, MARKET_DOMESTIC_ETF):
-        return _format_krw_code(symbol) if symbol else ""
-    return symbol.upper()
-
-
-def _find_stored_stock(stored_holdings: list[dict], item: dict) -> dict | None:
+def _apply_manual_stock_price(item: dict, usd_krw_rate: float | None) -> dict:
+    """입력 단가 × 수량으로 평가금액 계산."""
+    price = item.get("price")
     market_type = item["market_type"]
-    symbol = _normalize_stock_symbol(item.get("symbol", ""), market_type)
-    name = (item.get("name") or "").strip()
-
-    for stored in stored_holdings:
-        if stored["market_type"] != market_type:
-            continue
-        stored_symbol = _normalize_stock_symbol(stored.get("symbol", ""), market_type)
-        stored_name = (stored.get("name") or "").strip()
-        if symbol and stored_symbol and symbol == stored_symbol:
-            return stored
-        if name and stored_name and name == stored_name:
-            return stored
-    return None
-
-
-def _apply_stored_stock_price(
-    item: dict, stored: dict | None, usd_krw_rate: float | None
-) -> dict:
-    if not stored:
-        default_currency = "USD" if item["market_type"] == MARKET_FOREIGN else "KRW"
-        return {
-            **item,
-            "price": None,
-            "currency": default_currency,
-            "value": None,
-            "value_krw": None,
-            "price_error": "저장된 가격 정보가 없습니다.",
-        }
-
-    price = stored.get("price")
-    currency = stored.get("currency") or "KRW"
+    currency = "USD" if market_type == MARKET_FOREIGN else "KRW"
     quantity = item["quantity"]
-    value = price * quantity if price is not None else None
+
+    value = None
     value_krw = None
-    if value is not None:
+    price_error = None
+
+    if price is None:
+        price_error = "단가를 입력해 주세요."
+    else:
+        value = price * quantity
         if currency == "KRW":
             value_krw = value
-        elif usd_krw_rate:
+        elif usd_krw_rate is not None:
             value_krw = value * usd_krw_rate
+        else:
+            price_error = "해외주식 평가를 위해 USD/KRW 환율을 입력해 주세요."
 
     return {
         **item,
-        "symbol": item.get("symbol") or stored.get("symbol", ""),
         "price": price,
         "currency": currency,
         "value": value,
         "value_krw": value_krw,
-        "price_error": stored.get("price_error"),
+        "price_error": price_error,
     }
 
 
-def _find_stored_gold(stored_gold: list[dict], item: dict) -> dict | None:
-    name = (item.get("name") or "").strip()
-    for stored in stored_gold:
-        if (stored.get("name") or "").strip() == name:
-            return stored
-    return None
-
-
-def _apply_stored_gold_price(
-    item: dict, stored: dict | None, snapshot_gold_usd_per_oz: float | None
-) -> dict:
-    if not stored:
-        return {
-            **item,
-            "price": None,
-            "currency": "KRW",
-            "value": None,
-            "value_krw": None,
-            "gold_usd_per_oz": snapshot_gold_usd_per_oz,
-            "price_per_gram_krw_raw": None,
-            "price_error": "저장된 가격 정보가 없습니다.",
-        }
-
-    price = stored.get("price")
+def _apply_manual_gold_price(item: dict, gold_usd_per_oz: float | None) -> dict:
+    price = item.get("price")
     quantity = item["quantity"]
     value_krw = price * quantity if price is not None else None
     return {
@@ -458,9 +419,48 @@ def _apply_stored_gold_price(
         "currency": "KRW",
         "value": value_krw,
         "value_krw": value_krw,
-        "gold_usd_per_oz": stored.get("gold_usd_per_oz") or snapshot_gold_usd_per_oz,
-        "price_per_gram_krw_raw": stored.get("price_per_gram_krw_raw"),
-        "price_error": stored.get("price_error"),
+        "gold_usd_per_oz": gold_usd_per_oz,
+        "price_per_gram_krw_raw": item.get("price"),
+        "price_error": None if price is not None else "g당 가격(원)을 입력해 주세요.",
+    }
+
+
+def _build_snapshot_fields_manual(
+    validated_data: dict, snapshot: PortfolioSnapshot
+) -> dict:
+    """스냅샷 수정 — 입력한 당시 단가·환율로 평가금액 반영."""
+    domestic = _build_stock_items(validated_data.get("domestic", []), MARKET_DOMESTIC)
+    etf = _build_stock_items(validated_data.get("etf", []), MARKET_DOMESTIC_ETF)
+    foreign = _build_stock_items(validated_data.get("foreign", []), MARKET_FOREIGN)
+    cash = _build_cash_items(validated_data.get("cash", []))
+    gold = _build_gold_items(validated_data.get("gold", []))
+
+    if not domestic and not etf and not foreign and not cash and not gold:
+        raise ValueError("최소 1개 이상의 자산을 입력해 주세요.")
+
+    usd_krw_rate = validated_data.get("usd_krw_rate")
+    if usd_krw_rate is None:
+        usd_krw_rate = snapshot.usd_krw_rate
+
+    if foreign and usd_krw_rate is None:
+        raise ValueError("해외주식이 있으면 USD/KRW 환율을 입력해 주세요.")
+
+    gold_usd_per_oz = getattr(snapshot, "gold_usd_per_oz", None)
+
+    enriched_holdings = [
+        _apply_manual_stock_price(item, usd_krw_rate)
+        for item in domestic + etf + foreign
+    ]
+    enriched_gold = [
+        _apply_manual_gold_price(item, gold_usd_per_oz) for item in gold
+    ]
+
+    return {
+        "usd_krw_rate": usd_krw_rate,
+        "gold_usd_per_oz": gold_usd_per_oz if gold else None,
+        "holdings": [_stock_dict_to_snapshot_item(item) for item in enriched_holdings],
+        "cash_holdings": [_cash_dict_to_snapshot_item(item) for item in cash],
+        "gold_holdings": [_gold_dict_to_snapshot_item(item) for item in enriched_gold],
     }
 
 
@@ -492,38 +492,17 @@ def _build_enriched_snapshot_fields(validated_data: dict) -> dict:
     }
 
 
-def _build_snapshot_fields_preserve_prices(
-    snapshot: PortfolioSnapshot, validated_data: dict
-) -> dict:
-    """스냅샷 수정 시 기존 저장 가격을 유지하고 수량·메타데이터만 반영."""
-    domestic = _build_stock_items(validated_data.get("domestic", []), MARKET_DOMESTIC)
-    etf = _build_stock_items(validated_data.get("etf", []), MARKET_DOMESTIC_ETF)
-    foreign = _build_stock_items(validated_data.get("foreign", []), MARKET_FOREIGN)
-    cash = _build_cash_items(validated_data.get("cash", []))
-    gold = _build_gold_items(validated_data.get("gold", []))
+def update_snapshot(snapshot: PortfolioSnapshot, validated_data: dict) -> PortfolioSnapshot:
+    """기존 스냅샷 수정. snapshot_at 유지, 입력 단가·환율로 평가금액 반영."""
+    fields = _build_snapshot_fields_manual(validated_data, snapshot)
 
-    if not domestic and not etf and not foreign and not cash and not gold:
-        raise ValueError("최소 1개 이상의 자산을 입력해 주세요.")
-
-    stored_stocks = [_holding_to_dict(h) for h in snapshot.holdings or []]
-    stored_gold = [_gold_to_dict(g) for g in getattr(snapshot, "gold_holdings", []) or []]
-    usd_krw_rate = snapshot.usd_krw_rate
-    snapshot_gold_usd = getattr(snapshot, "gold_usd_per_oz", None)
-
-    enriched_holdings = [
-        _apply_stored_stock_price(item, _find_stored_stock(stored_stocks, item), usd_krw_rate)
-        for item in domestic + etf + foreign
-    ]
-    enriched_gold = [
-        _apply_stored_gold_price(item, _find_stored_gold(stored_gold, item), snapshot_gold_usd)
-        for item in gold
-    ]
-
-    return {
-        "holdings": [_stock_dict_to_snapshot_item(item) for item in enriched_holdings],
-        "cash_holdings": [_cash_dict_to_snapshot_item(item) for item in cash],
-        "gold_holdings": [_gold_dict_to_snapshot_item(item) for item in enriched_gold],
-    }
+    snapshot.usd_krw_rate = fields["usd_krw_rate"]
+    snapshot.gold_usd_per_oz = fields["gold_usd_per_oz"]
+    snapshot.holdings = fields["holdings"]
+    snapshot.cash_holdings = fields["cash_holdings"]
+    snapshot.gold_holdings = fields["gold_holdings"]
+    snapshot.save()
+    return snapshot
 
 
 def create_snapshot(validated_data: dict) -> PortfolioSnapshot:
@@ -535,17 +514,6 @@ def create_snapshot(validated_data: dict) -> PortfolioSnapshot:
         snapshot_at=datetime.utcnow(),
         **fields,
     )
-    snapshot.save()
-    return snapshot
-
-
-def update_snapshot(snapshot: PortfolioSnapshot, validated_data: dict) -> PortfolioSnapshot:
-    """기존 스냅샷의 자산 내역을 수정합니다. snapshot_at·가격·환율은 유지합니다."""
-    fields = _build_snapshot_fields_preserve_prices(snapshot, validated_data)
-
-    snapshot.holdings = fields["holdings"]
-    snapshot.cash_holdings = fields["cash_holdings"]
-    snapshot.gold_holdings = fields["gold_holdings"]
     snapshot.save()
     return snapshot
 
@@ -647,6 +615,69 @@ def build_performance_history(current_version: int | None = None) -> dict:
         "vs_first": vs_first,
         "snapshot_count": len(timeline),
     }
+
+
+def _snapshot_sector_values(snapshot: PortfolioSnapshot) -> dict[str, float]:
+    """스냅샷의 보유 항목(주식·현금·금)을 섹터별로 집계."""
+    totals: dict[str, float] = {}
+
+    def add(sector: str | None, value_krw: float | None):
+        key = (sector or "").strip() or "미분류"
+        totals[key] = totals.get(key, 0) + (value_krw or 0)
+
+    for item in snapshot.holdings or []:
+        add(item.sector, item.value_krw)
+    for item in snapshot.cash_holdings or []:
+        add(item.sector, item.value_krw)
+    for item in getattr(snapshot, "gold_holdings", []) or []:
+        add(item.sector, item.value_krw)
+
+    return totals
+
+
+def build_sector_history() -> dict:
+    """스냅샷별 섹터 비중 추이 — 섹터별 100% 스택 영역 차트용."""
+    snapshots = list(reversed(list_snapshots()))
+
+    points = []
+    all_sectors: dict[str, float] = {}
+    for snapshot in snapshots:
+        sector_values = _snapshot_sector_values(snapshot)
+        total = sum(sector_values.values())
+        points.append(
+            {
+                "snapshot_version": snapshot.snapshot_version,
+                "snapshot_at": snapshot.snapshot_at,
+                "total_value_krw": total,
+                "sector_values": sector_values,
+            }
+        )
+        for sector, value in sector_values.items():
+            all_sectors[sector] = all_sectors.get(sector, 0) + value
+
+    sector_order = [name for name, _ in sorted(all_sectors.items(), key=lambda kv: -kv[1])]
+
+    timeline = [
+        {
+            "snapshot_version": point["snapshot_version"],
+            "snapshot_at": point["snapshot_at"],
+            "total_value_krw": point["total_value_krw"],
+            "sectors": {
+                sector: {
+                    "value_krw": point["sector_values"].get(sector, 0),
+                    "percent": (
+                        point["sector_values"].get(sector, 0) / point["total_value_krw"] * 100
+                        if point["total_value_krw"]
+                        else 0
+                    ),
+                }
+                for sector in sector_order
+            },
+        }
+        for point in points
+    ]
+
+    return {"sectors": sector_order, "timeline": timeline}
 
 
 def snapshot_to_list_item(snapshot: PortfolioSnapshot) -> dict:

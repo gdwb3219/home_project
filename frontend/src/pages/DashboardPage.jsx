@@ -138,14 +138,14 @@ function PerformanceSection({ performance, loading }) {
       <div className="performance-chart-wrap">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-            <CartesianGrid stroke="rgba(148, 163, 184, 0.15)" strokeDasharray="3 3" />
+            <CartesianGrid stroke="rgba(15, 23, 42, 0.07)" strokeDasharray="3 3" />
             <XAxis
               dataKey="dateLabel"
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              tick={{ fill: '#64748b', fontSize: 12 }}
               tickLine={false}
             />
             <YAxis
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              tick={{ fill: '#64748b', fontSize: 12 }}
               tickLine={false}
               axisLine={false}
               tickFormatter={(value) => `${Math.round(value / 10000)}만`}

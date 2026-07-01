@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from portfolio.serializers import AssetSaveSerializer
+from portfolio.serializers import AssetSaveSerializer, SnapshotUpdateSerializer
 from portfolio.services.snapshot_service import (
     create_snapshot,
     get_snapshot,
@@ -90,7 +90,7 @@ class SnapshotDetailView(APIView):
                 {"detail": f"스냅샷 v{version}을 찾을 수 없습니다."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        return Response(snapshot_to_assets(snapshot))
+        return Response(snapshot_to_assets(snapshot, include_prices=True))
 
     def put(self, request, version):
         snapshot = get_snapshot(version=version)
@@ -100,7 +100,7 @@ class SnapshotDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = AssetSaveSerializer(data=request.data)
+        serializer = SnapshotUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
@@ -108,9 +108,9 @@ class SnapshotDetailView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        data = snapshot_to_assets(updated)
+        data = snapshot_to_assets(updated, include_prices=True)
         data["message"] = (
             f"스냅샷 v{updated.snapshot_version}이 수정되었습니다. "
-            f"(저장 시점·가격 유지)"
+            f"(입력한 단가·환율로 평가금액 반영)"
         )
         return Response(data)

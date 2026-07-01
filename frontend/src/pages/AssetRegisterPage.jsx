@@ -1,18 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import Layout from '../components/Layout'
+import { SortableHeaderActions, SortableRowActions } from '../components/SortableRowActions'
+import { useDragReorder } from '../hooks/useDragReorder'
+import { reorderList } from '../utils/reorderList'
 
-const emptyDomesticRow = () => ({
+const emptyDomesticRow = (withPrice = false) => ({
   name: '',
   quantity: '',
   asset_category: '',
   broker: '',
   sector: '',
   industry: '',
+  ...(withPrice ? { price: '' } : {}),
 })
 
-const emptyForeignRow = () => ({
+const emptyForeignRow = (withPrice = false) => ({
   symbol: '',
   name: '',
   quantity: '',
@@ -20,6 +24,7 @@ const emptyForeignRow = () => ({
   broker: '',
   sector: '',
   industry: '',
+  ...(withPrice ? { price: '' } : {}),
 })
 
 const emptyCashRow = () => ({
@@ -31,13 +36,14 @@ const emptyCashRow = () => ({
   industry: '',
 })
 
-const emptyGoldRow = () => ({
+const emptyGoldRow = (withPrice = false) => ({
   name: '',
   quantity: '',
   asset_category: '금(Gold)',
   broker: '',
   sector: '',
   industry: '',
+  ...(withPrice ? { price: '' } : {}),
 })
 
 const EXTRA_FIELDS = [
@@ -54,7 +60,7 @@ const CASH_EXTRA_FIELDS = [
   { key: 'industry', label: '업종', placeholder: '예: -' },
 ]
 
-function mapDomesticToRow(item) {
+function mapDomesticToRow(item, includePrice = false) {
   return {
     name: item.name || '',
     quantity: String(item.quantity),
@@ -62,10 +68,11 @@ function mapDomesticToRow(item) {
     broker: item.broker || '',
     sector: item.sector || '',
     industry: item.industry || '',
+    ...(includePrice ? { price: item.price != null ? String(item.price) : '' } : {}),
   }
 }
 
-function mapForeignToRow(item) {
+function mapForeignToRow(item, includePrice = false) {
   return {
     symbol: item.symbol || '',
     name: item.name || '',
@@ -74,6 +81,7 @@ function mapForeignToRow(item) {
     broker: item.broker || '',
     sector: item.sector || '',
     industry: item.industry || '',
+    ...(includePrice ? { price: item.price != null ? String(item.price) : '' } : {}),
   }
 }
 
@@ -88,7 +96,7 @@ function mapCashToRow(item) {
   }
 }
 
-function mapGoldToRow(item) {
+function mapGoldToRow(item, includePrice = false) {
   return {
     name: item.name || '',
     quantity: String(item.quantity),
@@ -96,10 +104,14 @@ function mapGoldToRow(item) {
     broker: item.broker || '',
     sector: item.sector || '',
     industry: item.industry || '',
+    ...(includePrice ? { price: item.price != null ? String(item.price) : '' } : {}),
   }
 }
 
-function DomesticStockSection({ rows, onUpdate, onAdd, onRemove }) {
+function DomesticStockSection({ rows, onUpdate, onAdd, onRemove, onMoveRow, isEditMode = false }) {
+  const drag = useDragReorder(onMoveRow)
+  const rowClass = isEditMode ? 'form-row-domestic-edit' : 'form-row-domestic'
+
   return (
     <div className="holding-section">
       <div className="section-header">
@@ -108,86 +120,23 @@ function DomesticStockSection({ rows, onUpdate, onAdd, onRemove }) {
       </div>
 
       <div className="form-table-scroll">
-        <div className="form-table form-table-domestic">
-          <div className="form-row form-header form-row-domestic">
+        <div className={`form-table form-table-domestic${isEditMode ? ' form-table-domestic-edit' : ''}`}>
+          <div className={`form-row form-header ${isEditMode ? 'form-row-domestic-edit' : 'form-row-domestic'}`}>
             <span>종목명</span>
             <span>수량</span>
+            {isEditMode && <span>단가 (원)</span>}
             {EXTRA_FIELDS.map((field) => (
               <span key={field.key}>{field.label}</span>
             ))}
-            <span />
+            <SortableHeaderActions />
           </div>
 
           {rows.map((row, index) => (
-            <div className="form-row form-row-domestic" key={index}>
-              <input
-                type="text"
-                placeholder="예: 삼성전자"
-                value={row.name}
-                onChange={(e) => onUpdate(index, 'name', e.target.value)}
-                required={index === 0}
-              />
-              <input
-                type="number"
-                min="0"
-                step="any"
-                placeholder="0"
-                value={row.quantity}
-                onChange={(e) => onUpdate(index, 'quantity', e.target.value)}
-              />
-              {EXTRA_FIELDS.map((field) => (
-                <input
-                  key={field.key}
-                  type="text"
-                  placeholder={field.placeholder}
-                  value={row[field.key]}
-                  onChange={(e) => onUpdate(index, field.key, e.target.value)}
-                />
-              ))}
-              <button
-                type="button"
-                className="btn-icon"
-                onClick={() => onRemove(index)}
-                aria-label="행 삭제"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <button type="button" className="btn-secondary section-add-btn" onClick={onAdd}>
-        + 국내주식 추가
-      </button>
-    </div>
-  )
-}
-
-function DomesticEtfSection({ rows, onUpdate, onAdd, onRemove }) {
-  return (
-    <div className="holding-section">
-      <div className="section-header">
-        <h2>국내 ETF</h2>
-        <p>
-          ETF명만 입력하면 됩니다. KODEX, TIGER, RISE, SOL 등 국내 상장 ETF를 등록할 수 있습니다.
-          (예: KODEX 미국AI전력핵심인프라)
-        </p>
-      </div>
-
-      <div className="form-table-scroll">
-        <div className="form-table form-table-domestic">
-          <div className="form-row form-header form-row-domestic">
-            <span>ETF명</span>
-            <span>수량</span>
-            {EXTRA_FIELDS.map((field) => (
-              <span key={field.key}>{field.label}</span>
-            ))}
-            <span />
-          </div>
-
-          {rows.map((row, index) => (
-            <div className="form-row form-row-domestic" key={index}>
+            <div
+              className={drag.getRowClassName(index, `form-row ${rowClass}`)}
+              key={index}
+              {...drag.getRowProps(index)}
+            >
               <input
                 type="text"
                 placeholder="예: KODEX 미국AI전력핵심인프라"
@@ -203,6 +152,98 @@ function DomesticEtfSection({ rows, onUpdate, onAdd, onRemove }) {
                 value={row.quantity}
                 onChange={(e) => onUpdate(index, 'quantity', e.target.value)}
               />
+              {isEditMode && (
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="0"
+                  value={row.price ?? ''}
+                  onChange={(e) => onUpdate(index, 'price', e.target.value)}
+                />
+              )}
+              {EXTRA_FIELDS.map((field) => (
+                <input
+                  key={field.key}
+                  type="text"
+                  placeholder={field.placeholder}
+                  value={row[field.key]}
+                  onChange={(e) => onUpdate(index, field.key, e.target.value)}
+                />
+              ))}
+              <SortableRowActions
+                onRemove={() => onRemove(index)}
+                handleProps={drag.getHandleProps(index)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button type="button" className="btn-secondary section-add-btn" onClick={onAdd}>
+        + 국내주식 추가
+      </button>
+    </div>
+  )
+}
+
+function DomesticEtfSection({ rows, onUpdate, onAdd, onRemove, onMoveRow, isEditMode = false }) {
+  const drag = useDragReorder(onMoveRow)
+  const rowClass = isEditMode ? 'form-row-domestic-edit' : 'form-row-domestic'
+
+  return (
+    <div className="holding-section">
+      <div className="section-header">
+        <h2>국내 ETF</h2>
+        <p>
+          ETF명만 입력하면 됩니다. KODEX, TIGER, RISE, SOL 등 국내 상장 ETF를 등록할 수 있습니다.
+          (예: KODEX 미국AI전력핵심인프라)
+        </p>
+      </div>
+
+      <div className="form-table-scroll">
+        <div className={`form-table form-table-domestic${isEditMode ? ' form-table-domestic-edit' : ''}`}>
+          <div className={`form-row form-header ${isEditMode ? 'form-row-domestic-edit' : 'form-row-domestic'}`}>
+            <span>ETF명</span>
+            <span>수량</span>
+            {isEditMode && <span>단가 (원)</span>}
+            {EXTRA_FIELDS.map((field) => (
+              <span key={field.key}>{field.label}</span>
+            ))}
+            <SortableHeaderActions />
+          </div>
+
+          {rows.map((row, index) => (
+            <div
+              className={drag.getRowClassName(index, `form-row ${rowClass}`)}
+              key={index}
+              {...drag.getRowProps(index)}
+            >
+              <input
+                type="text"
+                placeholder="예: KODEX 미국AI전력핵심인프라"
+                value={row.name}
+                onChange={(e) => onUpdate(index, 'name', e.target.value)}
+                required={index === 0}
+              />
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="0"
+                value={row.quantity}
+                onChange={(e) => onUpdate(index, 'quantity', e.target.value)}
+              />
+              {isEditMode && (
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="0"
+                  value={row.price ?? ''}
+                  onChange={(e) => onUpdate(index, 'price', e.target.value)}
+                />
+              )}
               {EXTRA_FIELDS.map((field) => (
                 <input
                   key={field.key}
@@ -212,14 +253,10 @@ function DomesticEtfSection({ rows, onUpdate, onAdd, onRemove }) {
                   onChange={(e) => onUpdate(index, field.key, e.target.value)}
                 />
               ))}
-              <button
-                type="button"
-                className="btn-icon"
-                onClick={() => onRemove(index)}
-                aria-label="행 삭제"
-              >
-                ✕
-              </button>
+              <SortableRowActions
+                onRemove={() => onRemove(index)}
+                handleProps={drag.getHandleProps(index)}
+              />
             </div>
           ))}
         </div>
@@ -232,7 +269,10 @@ function DomesticEtfSection({ rows, onUpdate, onAdd, onRemove }) {
   )
 }
 
-function ForeignStockSection({ rows, onUpdate, onAdd, onRemove }) {
+function ForeignStockSection({ rows, onUpdate, onAdd, onRemove, onMoveRow, isEditMode = false }) {
+  const drag = useDragReorder(onMoveRow)
+  const rowClass = isEditMode ? 'form-row-wide-edit' : 'form-row-wide'
+
   return (
     <div className="holding-section">
       <div className="section-header">
@@ -241,19 +281,24 @@ function ForeignStockSection({ rows, onUpdate, onAdd, onRemove }) {
       </div>
 
       <div className="form-table-scroll">
-        <div className="form-table form-table-wide">
-          <div className="form-row form-header form-row-wide">
+        <div className={`form-table form-table-wide${isEditMode ? ' form-table-wide-edit' : ''}`}>
+          <div className={`form-row form-header ${isEditMode ? 'form-row-wide-edit' : 'form-row-wide'}`}>
             <span>티커</span>
             <span>종목명 (선택)</span>
             <span>수량</span>
+            {isEditMode && <span>단가 (USD)</span>}
             {EXTRA_FIELDS.map((field) => (
               <span key={field.key}>{field.label}</span>
             ))}
-            <span />
+            <SortableHeaderActions />
           </div>
 
           {rows.map((row, index) => (
-            <div className="form-row form-row-wide" key={index}>
+            <div
+              className={drag.getRowClassName(index, `form-row ${rowClass}`)}
+              key={index}
+              {...drag.getRowProps(index)}
+            >
               <input
                 type="text"
                 placeholder="예: AAPL"
@@ -274,6 +319,16 @@ function ForeignStockSection({ rows, onUpdate, onAdd, onRemove }) {
                 value={row.quantity}
                 onChange={(e) => onUpdate(index, 'quantity', e.target.value)}
               />
+              {isEditMode && (
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="0"
+                  value={row.price ?? ''}
+                  onChange={(e) => onUpdate(index, 'price', e.target.value)}
+                />
+              )}
               {EXTRA_FIELDS.map((field) => (
                 <input
                   key={field.key}
@@ -283,14 +338,10 @@ function ForeignStockSection({ rows, onUpdate, onAdd, onRemove }) {
                   onChange={(e) => onUpdate(index, field.key, e.target.value)}
                 />
               ))}
-              <button
-                type="button"
-                className="btn-icon"
-                onClick={() => onRemove(index)}
-                aria-label="행 삭제"
-              >
-                ✕
-              </button>
+              <SortableRowActions
+                onRemove={() => onRemove(index)}
+                handleProps={drag.getHandleProps(index)}
+              />
             </div>
           ))}
         </div>
@@ -303,7 +354,10 @@ function ForeignStockSection({ rows, onUpdate, onAdd, onRemove }) {
   )
 }
 
-function GoldSection({ rows, onUpdate, onAdd, onRemove, isEditMode = false }) {
+function GoldSection({ rows, onUpdate, onAdd, onRemove, onMoveRow, isEditMode = false }) {
+  const drag = useDragReorder(onMoveRow)
+  const rowClass = isEditMode ? 'form-row-cash-edit' : 'form-row-cash'
+
   return (
     <div className="holding-section">
       <div className="section-header">
@@ -311,24 +365,29 @@ function GoldSection({ rows, onUpdate, onAdd, onRemove, isEditMode = false }) {
         <p>
           보유량(g)을 입력합니다.
           {isEditMode
-            ? ' 수정 저장 시 기존 g당 가격이 유지됩니다.'
+            ? ' 수정 저장 시 입력한 g당 가격(원) × 보유량으로 평가금액이 계산됩니다.'
             : ' 저장 시 COMEX 금 선물(USD/troy oz) → 원화/g 환산 후 100원 단위 절사 가격이 적용됩니다.'}
         </p>
       </div>
 
       <div className="form-table-scroll">
-        <div className="form-table form-table-cash">
-          <div className="form-row form-header form-row-cash">
+        <div className={`form-table form-table-cash${isEditMode ? ' form-table-cash-edit' : ''}`}>
+          <div className={`form-row form-header ${isEditMode ? 'form-row-cash-edit' : 'form-row-cash'}`}>
             <span>자산명</span>
             <span>보유량 (g)</span>
+            {isEditMode && <span>g당 가격 (원)</span>}
             {CASH_EXTRA_FIELDS.map((field) => (
               <span key={field.key}>{field.label}</span>
             ))}
-            <span />
+            <SortableHeaderActions />
           </div>
 
           {rows.map((row, index) => (
-            <div className="form-row form-row-cash" key={index}>
+            <div
+              className={drag.getRowClassName(index, `form-row ${rowClass}`)}
+              key={index}
+              {...drag.getRowProps(index)}
+            >
               <input
                 type="text"
                 placeholder="예: 금 현물"
@@ -343,6 +402,16 @@ function GoldSection({ rows, onUpdate, onAdd, onRemove, isEditMode = false }) {
                 value={row.quantity}
                 onChange={(e) => onUpdate(index, 'quantity', e.target.value)}
               />
+              {isEditMode && (
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="0"
+                  value={row.price ?? ''}
+                  onChange={(e) => onUpdate(index, 'price', e.target.value)}
+                />
+              )}
               {CASH_EXTRA_FIELDS.map((field) => (
                 <input
                   key={field.key}
@@ -352,14 +421,10 @@ function GoldSection({ rows, onUpdate, onAdd, onRemove, isEditMode = false }) {
                   onChange={(e) => onUpdate(index, field.key, e.target.value)}
                 />
               ))}
-              <button
-                type="button"
-                className="btn-icon"
-                onClick={() => onRemove(index)}
-                aria-label="행 삭제"
-              >
-                ✕
-              </button>
+              <SortableRowActions
+                onRemove={() => onRemove(index)}
+                handleProps={drag.getHandleProps(index)}
+              />
             </div>
           ))}
         </div>
@@ -372,7 +437,9 @@ function GoldSection({ rows, onUpdate, onAdd, onRemove, isEditMode = false }) {
   )
 }
 
-function CashSection({ rows, onUpdate, onAdd, onRemove }) {
+function CashSection({ rows, onUpdate, onAdd, onRemove, onMoveRow }) {
+  const drag = useDragReorder(onMoveRow)
+
   return (
     <div className="holding-section">
       <div className="section-header">
@@ -388,11 +455,15 @@ function CashSection({ rows, onUpdate, onAdd, onRemove }) {
             {CASH_EXTRA_FIELDS.map((field) => (
               <span key={field.key}>{field.label}</span>
             ))}
-            <span />
+            <SortableHeaderActions />
           </div>
 
           {rows.map((row, index) => (
-            <div className="form-row form-row-cash" key={index}>
+            <div
+              className={drag.getRowClassName(index, 'form-row form-row-cash')}
+              key={index}
+              {...drag.getRowProps(index)}
+            >
               <input
                 type="text"
                 placeholder="예: CMA"
@@ -416,14 +487,10 @@ function CashSection({ rows, onUpdate, onAdd, onRemove }) {
                   onChange={(e) => onUpdate(index, field.key, e.target.value)}
                 />
               ))}
-              <button
-                type="button"
-                className="btn-icon"
-                onClick={() => onRemove(index)}
-                aria-label="행 삭제"
-              >
-                ✕
-              </button>
+              <SortableRowActions
+                onRemove={() => onRemove(index)}
+                handleProps={drag.getHandleProps(index)}
+              />
             </div>
           ))}
         </div>
@@ -441,7 +508,7 @@ function formatSnapshotDate(value) {
   return new Date(value).toLocaleString('ko-KR')
 }
 
-function applyAssetDataToForm(data, setters) {
+function applyAssetDataToForm(data, setters, isEditMode) {
   const {
     setDomesticRows,
     setEtfRows,
@@ -449,24 +516,28 @@ function applyAssetDataToForm(data, setters) {
     setCashRows,
     setGoldRows,
     setSnapshotAt,
+    setUsdKrwRate,
   } = setters
 
   if (data.domestic?.length > 0) {
-    setDomesticRows(data.domestic.map(mapDomesticToRow))
+    setDomesticRows(data.domestic.map((item) => mapDomesticToRow(item, isEditMode)))
   }
   if (data.etf?.length > 0) {
-    setEtfRows(data.etf.map(mapDomesticToRow))
+    setEtfRows(data.etf.map((item) => mapDomesticToRow(item, isEditMode)))
   }
   if (data.foreign?.length > 0) {
-    setForeignRows(data.foreign.map(mapForeignToRow))
+    setForeignRows(data.foreign.map((item) => mapForeignToRow(item, isEditMode)))
   }
   if (data.cash?.length > 0) {
     setCashRows(data.cash.map(mapCashToRow))
   }
   if (data.gold?.length > 0) {
-    setGoldRows(data.gold.map(mapGoldToRow))
+    setGoldRows(data.gold.map((item) => mapGoldToRow(item, isEditMode)))
   }
   setSnapshotAt(data.updated_at || data.snapshot_at || null)
+  if (isEditMode && setUsdKrwRate) {
+    setUsdKrwRate(data.usd_krw_rate != null ? String(data.usd_krw_rate) : '')
+  }
 }
 
 export default function AssetRegisterPage() {
@@ -482,6 +553,7 @@ export default function AssetRegisterPage() {
   const [foreignRows, setForeignRows] = useState([emptyForeignRow()])
   const [cashRows, setCashRows] = useState([emptyCashRow()])
   const [goldRows, setGoldRows] = useState([emptyGoldRow()])
+  const [usdKrwRate, setUsdKrwRate] = useState('')
   const [snapshotAt, setSnapshotAt] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -494,14 +566,19 @@ export default function AssetRegisterPage() {
         const data = isEditMode
           ? await api.getSnapshotAssets(editVersion)
           : await api.getAssets()
-        applyAssetDataToForm(data, {
-          setDomesticRows,
-          setEtfRows,
-          setForeignRows,
-          setCashRows,
-          setGoldRows,
-          setSnapshotAt,
-        })
+        applyAssetDataToForm(
+          data,
+          {
+            setDomesticRows,
+            setEtfRows,
+            setForeignRows,
+            setCashRows,
+            setGoldRows,
+            setSnapshotAt,
+            setUsdKrwRate,
+          },
+          isEditMode,
+        )
       } catch (err) {
         setError(err.message)
       } finally {
@@ -516,21 +593,41 @@ export default function AssetRegisterPage() {
     setter((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
   }
 
+  const moveDomesticRow = useCallback((from, to) => {
+    setDomesticRows((prev) => reorderList(prev, from, to))
+  }, [])
+
+  const moveEtfRow = useCallback((from, to) => {
+    setEtfRows((prev) => reorderList(prev, from, to))
+  }, [])
+
+  const moveForeignRow = useCallback((from, to) => {
+    setForeignRows((prev) => reorderList(prev, from, to))
+  }, [])
+
+  const moveCashRow = useCallback((from, to) => {
+    setCashRows((prev) => reorderList(prev, from, to))
+  }, [])
+
+  const moveGoldRow = useCallback((from, to) => {
+    setGoldRows((prev) => reorderList(prev, from, to))
+  }, [])
+
   const removeDomesticRow = (index) => {
     setDomesticRows((prev) =>
-      prev.length === 1 ? [emptyDomesticRow()] : prev.filter((_, i) => i !== index),
+      prev.length === 1 ? [emptyDomesticRow(isEditMode)] : prev.filter((_, i) => i !== index),
     )
   }
 
   const removeEtfRow = (index) => {
     setEtfRows((prev) =>
-      prev.length === 1 ? [emptyDomesticRow()] : prev.filter((_, i) => i !== index),
+      prev.length === 1 ? [emptyDomesticRow(isEditMode)] : prev.filter((_, i) => i !== index),
     )
   }
 
   const removeForeignRow = (index) => {
     setForeignRows((prev) =>
-      prev.length === 1 ? [emptyForeignRow()] : prev.filter((_, i) => i !== index),
+      prev.length === 1 ? [emptyForeignRow(isEditMode)] : prev.filter((_, i) => i !== index),
     )
   }
 
@@ -539,32 +636,47 @@ export default function AssetRegisterPage() {
   }
 
   const removeGoldRow = (index) => {
-    setGoldRows((prev) => (prev.length === 1 ? [emptyGoldRow()] : prev.filter((_, i) => i !== index)))
+    setGoldRows((prev) =>
+      prev.length === 1 ? [emptyGoldRow(isEditMode)] : prev.filter((_, i) => i !== index),
+    )
   }
 
-  const parseDomesticRows = (rows) =>
+  const parseOptionalPrice = (value) => {
+    if (value === '' || value == null) return null
+    return Number(value)
+  }
+
+  const parseDomesticRows = (rows, withPrice = false) =>
     rows
-      .map((row) => ({
-        name: row.name.trim(),
-        quantity: Number(row.quantity),
-        asset_category: row.asset_category.trim(),
-        broker: row.broker.trim(),
-        sector: row.sector.trim(),
-        industry: row.industry.trim(),
-      }))
+      .map((row) => {
+        const item = {
+          name: row.name.trim(),
+          quantity: Number(row.quantity),
+          asset_category: row.asset_category.trim(),
+          broker: row.broker.trim(),
+          sector: row.sector.trim(),
+          industry: row.industry.trim(),
+        }
+        if (withPrice) item.price = parseOptionalPrice(row.price)
+        return item
+      })
       .filter((row) => row.name)
 
-  const parseForeignRows = (rows) =>
+  const parseForeignRows = (rows, withPrice = false) =>
     rows
-      .map((row) => ({
-        symbol: row.symbol.trim(),
-        name: row.name.trim(),
-        quantity: Number(row.quantity),
-        asset_category: row.asset_category.trim(),
-        broker: row.broker.trim(),
-        sector: row.sector.trim(),
-        industry: row.industry.trim(),
-      }))
+      .map((row) => {
+        const item = {
+          symbol: row.symbol.trim(),
+          name: row.name.trim(),
+          quantity: Number(row.quantity),
+          asset_category: row.asset_category.trim(),
+          broker: row.broker.trim(),
+          sector: row.sector.trim(),
+          industry: row.industry.trim(),
+        }
+        if (withPrice) item.price = parseOptionalPrice(row.price)
+        return item
+      })
       .filter((row) => row.symbol)
 
   const parseCashRows = (rows) =>
@@ -579,16 +691,20 @@ export default function AssetRegisterPage() {
       }))
       .filter((row) => row.name)
 
-  const parseGoldRows = (rows) =>
+  const parseGoldRows = (rows, withPrice = false) =>
     rows
-      .map((row) => ({
-        name: row.name.trim(),
-        quantity: Number(row.quantity),
-        asset_category: row.asset_category.trim() || '금(Gold)',
-        broker: row.broker.trim(),
-        sector: row.sector.trim(),
-        industry: row.industry.trim(),
-      }))
+      .map((row) => {
+        const item = {
+          name: row.name.trim(),
+          quantity: Number(row.quantity),
+          asset_category: row.asset_category.trim() || '금(Gold)',
+          broker: row.broker.trim(),
+          sector: row.sector.trim(),
+          industry: row.industry.trim(),
+        }
+        if (withPrice) item.price = parseOptionalPrice(row.price)
+        return item
+      })
       .filter((row) => row.name)
 
   const handleSave = async (event) => {
@@ -596,11 +712,11 @@ export default function AssetRegisterPage() {
     setMessage(null)
     setError(null)
 
-    const domestic = parseDomesticRows(domesticRows)
-    const etf = parseDomesticRows(etfRows)
-    const foreign = parseForeignRows(foreignRows)
+    const domestic = parseDomesticRows(domesticRows, isEditMode)
+    const etf = parseDomesticRows(etfRows, isEditMode)
+    const foreign = parseForeignRows(foreignRows, isEditMode)
     const cash = parseCashRows(cashRows)
-    const gold = parseGoldRows(goldRows)
+    const gold = parseGoldRows(goldRows, isEditMode)
     const all = [...domestic, ...etf, ...foreign, ...cash, ...gold]
 
     if (all.length === 0) {
@@ -618,9 +734,32 @@ export default function AssetRegisterPage() {
       return
     }
 
+    if (isEditMode) {
+      const pricedStocks = [...domestic, ...etf, ...foreign]
+      if (
+        pricedStocks.some(
+          (row) => row.price == null || Number.isNaN(row.price) || row.price < 0,
+        ) ||
+        gold.some((row) => row.price == null || Number.isNaN(row.price) || row.price < 0)
+      ) {
+        setError('수정 모드에서는 주식·ETF·금 항목에 단가를 입력해 주세요.')
+        return
+      }
+      if (foreign.length > 0) {
+        const rate = parseOptionalPrice(usdKrwRate)
+        if (rate == null || Number.isNaN(rate) || rate <= 0) {
+          setError('해외주식이 있으면 USD/KRW 환율을 입력해 주세요.')
+          return
+        }
+      }
+    }
+
     setSaving(true)
     try {
       const payload = { domestic, etf, foreign, cash, gold }
+      if (isEditMode) {
+        payload.usd_krw_rate = parseOptionalPrice(usdKrwRate)
+      }
       const result = isEditMode
         ? await api.updateSnapshotAssets(editVersion, payload)
         : await api.saveAssets(payload)
@@ -648,8 +787,8 @@ export default function AssetRegisterPage() {
           <h1>{isEditMode ? `스냅샷 v${editVersion} 수정` : '자산 등록'}</h1>
           <p className="subtitle">
             {isEditMode
-              ? '선택한 스냅샷의 자산 내역을 수정합니다. snapshot_at과 저장 당시 가격은 유지되며, 수량 변경 시 기존 단가로 평가금액만 재계산됩니다.'
-              : '저장 시 현재가 API로 가격을 조회해 새 스냅샷 버전으로 기록합니다.'}
+              ? '당시 단가·환율을 입력하고 수량과 곱해 평가금액을 반영합니다. 각 섹션에서 ☰ 버튼을 드래그해 순서를 변경할 수 있습니다.'
+              : '저장 시 현재가 API로 가격을 조회해 새 스냅샷 버전으로 기록합니다. 각 섹션에서 ☰ 버튼을 드래그해 순서를 변경할 수 있습니다.'}
           </p>
         </div>
         {isEditMode && (
@@ -675,25 +814,51 @@ export default function AssetRegisterPage() {
           <p className="empty-state">기존 데이터를 불러오는 중...</p>
         ) : (
           <form onSubmit={handleSave} className="register-form">
+            {isEditMode && (
+              <div className="holding-section snapshot-rate-panel">
+                <div className="section-header">
+                  <h2>당시 환율</h2>
+                  <p>해외주식 평가금액(원화) = 단가(USD) × 수량 × 환율. 국내 자산·금은 원화 단가를 직접 입력합니다.</p>
+                </div>
+                <label className="rate-input-label">
+                  USD/KRW 환율
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="예: 1350"
+                    value={usdKrwRate}
+                    onChange={(e) => setUsdKrwRate(e.target.value)}
+                  />
+                </label>
+              </div>
+            )}
+
             <DomesticStockSection
               rows={domesticRows}
               onUpdate={updateRows(setDomesticRows)}
-              onAdd={() => setDomesticRows((prev) => [...prev, emptyDomesticRow()])}
+              onAdd={() => setDomesticRows((prev) => [...prev, emptyDomesticRow(isEditMode)])}
               onRemove={removeDomesticRow}
+              onMoveRow={moveDomesticRow}
+              isEditMode={isEditMode}
             />
 
             <DomesticEtfSection
               rows={etfRows}
               onUpdate={updateRows(setEtfRows)}
-              onAdd={() => setEtfRows((prev) => [...prev, emptyDomesticRow()])}
+              onAdd={() => setEtfRows((prev) => [...prev, emptyDomesticRow(isEditMode)])}
               onRemove={removeEtfRow}
+              onMoveRow={moveEtfRow}
+              isEditMode={isEditMode}
             />
 
             <ForeignStockSection
               rows={foreignRows}
               onUpdate={updateRows(setForeignRows)}
-              onAdd={() => setForeignRows((prev) => [...prev, emptyForeignRow()])}
+              onAdd={() => setForeignRows((prev) => [...prev, emptyForeignRow(isEditMode)])}
               onRemove={removeForeignRow}
+              onMoveRow={moveForeignRow}
+              isEditMode={isEditMode}
             />
 
             <CashSection
@@ -701,13 +866,15 @@ export default function AssetRegisterPage() {
               onUpdate={updateRows(setCashRows)}
               onAdd={() => setCashRows((prev) => [...prev, emptyCashRow()])}
               onRemove={removeCashRow}
+              onMoveRow={moveCashRow}
             />
 
             <GoldSection
               rows={goldRows}
               onUpdate={updateRows(setGoldRows)}
-              onAdd={() => setGoldRows((prev) => [...prev, emptyGoldRow()])}
+              onAdd={() => setGoldRows((prev) => [...prev, emptyGoldRow(isEditMode)])}
               onRemove={removeGoldRow}
+              onMoveRow={moveGoldRow}
               isEditMode={isEditMode}
             />
 

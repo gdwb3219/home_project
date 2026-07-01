@@ -3,12 +3,12 @@ import { CHART_COLORS, formatKRW } from './assetAggregation'
 export { formatKRW }
 
 const CATEGORY_SERIES = [
-  { key: 'total_value_krw', label: '총 자산', color: '#3b82f6' },
-  { key: 'domestic_value_krw', label: '국내주식', color: '#10b981' },
-  { key: 'etf_value_krw', label: '국내 ETF', color: '#f59e0b' },
-  { key: 'foreign_value_krw', label: '해외주식', color: '#ef4444' },
-  { key: 'cash_value_krw', label: '현금성', color: '#8b5cf6' },
-  { key: 'gold_value_krw', label: '금', color: '#eab308' },
+  { key: 'total_value_krw', label: '총 자산', color: '#0f172a' },
+  { key: 'domestic_value_krw', label: '국내주식', color: '#1e3a5f' },
+  { key: 'etf_value_krw', label: '국내 ETF', color: '#2563eb' },
+  { key: 'foreign_value_krw', label: '해외주식', color: '#3b82f6' },
+  { key: 'cash_value_krw', label: '현금성', color: '#64748b' },
+  { key: 'gold_value_krw', label: '금', color: '#94a3b8' },
 ]
 
 export function formatChangePct(value) {
