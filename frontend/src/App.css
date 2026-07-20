@@ -21,9 +21,9 @@ body {
 }
 
 .app {
-  max-width: 1100px;
+  width: 100%;
   margin: 0 auto;
-  padding: 1.5rem 1.5rem 4rem;
+  padding: 1.5rem 200px 4rem;
 }
 
 .nav {
@@ -756,6 +756,89 @@ tfoot td {
   text-align: right;
 }
 
+.sub-label {
+  color: #94a3b8;
+  font-size: 0.8125rem;
+}
+
+.sector-trend-section {
+  margin-top: 1.5rem;
+}
+
+.rebalance-section {
+  margin-top: 1.5rem;
+}
+
+.rebalance-panel {
+  padding: 1.5rem;
+}
+
+.rebalance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.rebalance-target-sum {
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.rebalance-target-sum.is-off {
+  color: #dc2626;
+}
+
+.rebalance-table-wrap {
+  overflow-x: auto;
+}
+
+.rebalance-target-input {
+  width: 64px;
+  padding: 0.375rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.9375rem;
+  margin-right: 0.25rem;
+}
+
+.rebalance-target-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.rebalance-row-alert td {
+  background: rgba(220, 38, 38, 0.04);
+}
+
+.rebalance-tag {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.rebalance-tag.buy {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+.rebalance-tag.sell {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.rebalance-tag.hold {
+  background: rgba(100, 116, 139, 0.12);
+  color: #64748b;
+}
+
 @media (max-width: 960px) {
   .chart-grid {
     grid-template-columns: 1fr;
@@ -766,7 +849,19 @@ tfoot td {
   }
 }
 
+@media (max-width: 1400px) {
+  .app {
+    padding-left: 5vw;
+    padding-right: 5vw;
+  }
+}
+
 @media (max-width: 720px) {
+  .app {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
   .header {
     flex-direction: column;
   }

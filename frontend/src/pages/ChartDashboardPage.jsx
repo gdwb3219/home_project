@@ -13,6 +13,8 @@ import {
 } from 'recharts'
 import { api } from '../api/client'
 import Layout from '../components/Layout'
+import RebalancePanel from '../components/RebalancePanel'
+import SectorTrendChart from '../components/SectorTrendChart'
 import { buildChartBreakdown, formatKRW } from '../utils/assetAggregation'
 
 const DIMENSIONS = [
@@ -249,6 +251,22 @@ export default function ChartDashboardPage() {
                 data={breakdown[dimension.key]}
               />
             ))}
+          </section>
+
+          <section className="panel sector-trend-section">
+            <div className="panel-header">
+              <h2>섹터별 비중 추이</h2>
+              <p>
+                스냅샷별 총 자산을 100%로 두고, 섹터 비중이 시간에 따라 어떻게 변하는지 영역
+                차트로 확인합니다.{' '}
+                <Link to="/charts/sector-history">전체 화면으로 보기</Link>
+              </p>
+            </div>
+            <SectorTrendChart sectorHistory={dashboard?.sector_history} height={360} />
+          </section>
+
+          <section className="rebalance-section">
+            <RebalancePanel sectorData={breakdown.bySector} totalValue={breakdown.totalValue} />
           </section>
         </>
       )}

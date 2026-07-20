@@ -128,4 +128,40 @@ export function buildSectorHistoryChartData(sectorHistory) {
   return { sectorMeta, chartData }
 }
 
+export const REBALANCE_TARGETS_STORAGE_KEY = 'portfolio-rebalance-targets-v1'
+
+export function loadRebalanceTargets() {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(REBALANCE_TARGETS_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+export function saveRebalanceTargets(targets) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(REBALANCE_TARGETS_STORAGE_KEY, JSON.stringify(targets))
+}
+
+export function buildRebalancePlan(sectorData, targets, totalValue) {
+  return sectorData
+    .map((item) => {
+      const targetPercent = targets[item.name] ?? 0
+      const targetValue = (targetPercent / 100) * totalValue
+      return {
+        name: item.name,
+        color: item.color,
+        currentPercent: item.percent,
+        currentValue: item.value,
+        targetPercent,
+        targetValue,
+        diffPercent: targetPercent - item.percent,
+        diffValue: targetValue - item.value,
+      }
+    })
+    .sort((a, b) => b.currentValue - a.currentValue)
+}
+
 export { CHART_COLORS }
